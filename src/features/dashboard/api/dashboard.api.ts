@@ -1,6 +1,12 @@
 import { supabase } from '../hooks/useSupabase'
 import type { WorkoutSummary, BodyMetricsSummary } from '../types/dashboard.types'
 
+async function getUserId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Non authentifié')
+  return user.id
+}
+
 const MEASUREMENT_LABELS: { key: string; label: string }[] = [
   { key: 'neck_cm', label: 'Cou' },
   { key: 'shoulders_cm', label: 'Épaules' },
@@ -14,9 +20,11 @@ const MEASUREMENT_LABELS: { key: string; label: string }[] = [
 ]
 
 export async function fetchWorkoutSummary(since: string): Promise<WorkoutSummary> {
+  const userId = await getUserId()
   const { data, error } = await supabase
     .from('workouts')
     .select('id, started_at, finished_at')
+    .eq('user_id', userId)
     .gte('started_at', since)
     .not('finished_at', 'is', null)
     .order('started_at', { ascending: false })
@@ -71,9 +79,11 @@ export async function fetchWorkoutSummary(since: string): Promise<WorkoutSummary
 }
 
 export async function fetchBodyMetricsSummary(since: string): Promise<BodyMetricsSummary> {
+  const userId = await getUserId()
   const { data, error } = await supabase
     .from('body_metrics')
     .select('*')
+    .eq('user_id', userId)
     .gte('recorded_at', since)
     .order('recorded_at', { ascending: true })
 

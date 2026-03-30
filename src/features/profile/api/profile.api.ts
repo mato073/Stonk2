@@ -1,10 +1,18 @@
 import { supabase } from '../hooks/useSupabase'
 import type { Profile, Gender } from '../types/profile.types'
 
+async function getUserId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Non authentifié')
+  return user.id
+}
+
 export async function fetchProfile(): Promise<Profile | null> {
+  const userId = await getUserId()
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
+    .eq('user_id', userId)
     .maybeSingle()
 
   if (error) throw error
@@ -12,13 +20,11 @@ export async function fetchProfile(): Promise<Profile | null> {
 }
 
 export async function upsertProfile(updates: { height_cm?: number | null; gender?: Gender | null }): Promise<Profile> {
-  // Get current user
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Non authentifié')
+  const userId = await getUserId()
 
   const { data, error } = await supabase
     .from('profiles')
-    .upsert({ id: user.id, ...updates })
+    .upsert({ id: userId, user_id: userId, ...updates })
     .select('*')
     .single()
 
@@ -42,9 +48,11 @@ export type MetricRow = {
 }
 
 export async function fetchRecentMetrics(limit: number = 20): Promise<MetricRow[]> {
+  const userId = await getUserId()
   const { data, error } = await supabase
     .from('body_metrics')
     .select('recorded_at, weight_kg, neck_cm, waist_cm, hips_cm, shoulders_cm, chest_cm, arms_left_cm, arms_right_cm, legs_left_cm, legs_right_cm')
+    .eq('user_id', userId)
     .order('recorded_at', { ascending: false })
     .limit(limit)
 

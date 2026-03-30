@@ -12,10 +12,18 @@ import type {
   SetType,
 } from '../types/workout.types'
 
+async function getUserId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Non authentifié')
+  return user.id
+}
+
 export async function fetchExercises(): Promise<Exercise[]> {
+  const userId = await getUserId()
   const { data, error } = await supabase
     .from('exercises')
     .select('id, name, muscle_group, equipment')
+    .or(`user_id.is.null,user_id.eq.${userId}`)
     .order('name')
 
   if (error) throw error
@@ -23,12 +31,14 @@ export async function fetchExercises(): Promise<Exercise[]> {
 }
 
 export async function fetchLastSetsForExercise(exerciseId: string): Promise<WorkoutSet[]> {
+  const userId = await getUserId()
   // Find the most recent completed workout containing this exercise
   const { data: recentSets, error } = await supabase
     .from('workout_sets')
-    .select('*, workouts!inner(finished_at)')
+    .select('*, workouts!inner(finished_at, user_id)')
     .eq('exercise_id', exerciseId)
     .eq('completed', true)
+    .eq('workouts.user_id', userId)
     .not('workouts.finished_at', 'is', null)
     .order('workouts(finished_at)', { ascending: false })
     .limit(20)
@@ -57,9 +67,10 @@ export async function saveWorkout(
   workout: WorkoutInsert,
   sets: WorkoutSetInsert[],
 ): Promise<string> {
+  const userId = await getUserId()
   const { data, error: wErr } = await supabase
     .from('workouts')
-    .insert(workout)
+    .insert({ ...workout, user_id: userId })
     .select('id')
     .single()
 
@@ -68,7 +79,7 @@ export async function saveWorkout(
   const workoutId = data.id as string
 
   if (sets.length > 0) {
-    const rows = sets.map((s) => ({ ...s, workout_id: workoutId }))
+    const rows = sets.map((s) => ({ ...s, workout_id: workoutId, user_id: userId }))
     const { error: sErr } = await supabase.from('workout_sets').insert(rows)
 
     if (sErr) {
@@ -84,9 +95,11 @@ export async function saveWorkout(
 // --- Templates ---
 
 export async function fetchTemplates(): Promise<WorkoutTemplate[]> {
+  const userId = await getUserId()
   const { data, error } = await supabase
     .from('workout_templates')
     .select('*')
+    .eq('user_id', userId)
     .order('created_at', { ascending: false })
 
   if (error) throw error
@@ -94,9 +107,10 @@ export async function fetchTemplates(): Promise<WorkoutTemplate[]> {
 }
 
 export async function createTemplate(name: string): Promise<WorkoutTemplate> {
+  const userId = await getUserId()
   const { data, error } = await supabase
     .from('workout_templates')
-    .insert({ name })
+    .insert({ name, user_id: userId })
     .select('*')
     .single()
 
@@ -157,9 +171,10 @@ function mapTemplateExercise(row: Record<string, unknown>): TemplateExercise {
 }
 
 export async function addTemplateExercise(data: TemplateExerciseInsert): Promise<TemplateExercise> {
+  const userId = await getUserId()
   const { data: row, error } = await supabase
     .from('template_exercises')
-    .insert(data)
+    .insert({ ...data, user_id: userId })
     .select('*, exercises(id, name, muscle_group, equipment)')
     .single()
 
@@ -214,9 +229,10 @@ export async function fetchAllTemplateSets(templateExerciseIds: string[]): Promi
 }
 
 export async function addTemplateSet(data: TemplateSetInsert): Promise<TemplateSet> {
+  const userId = await getUserId()
   const { data: row, error } = await supabase
     .from('template_sets')
-    .insert(data)
+    .insert({ ...data, user_id: userId })
     .select('*')
     .single()
 
@@ -249,6 +265,7 @@ export async function syncTemplateSetsFromWorkout(
   updates: { id: string; weight_kg: number | null; reps: number | null; set_type: SetType }[],
   newSets: TemplateSetInsert[],
 ): Promise<void> {
+  const userId = await getUserId()
   // Update existing template sets
   for (const u of updates) {
     await supabase
@@ -258,7 +275,7 @@ export async function syncTemplateSetsFromWorkout(
   }
   // Insert new sets (added during workout)
   if (newSets.length > 0) {
-    await supabase.from('template_sets').insert(newSets)
+    await supabase.from('template_sets').insert(newSets.map((s) => ({ ...s, user_id: userId })))
   }
 }
 
@@ -269,9 +286,10 @@ export async function createCustomExercise(
   muscleGroup: string,
   equipment: string | null,
 ): Promise<Exercise> {
+  const userId = await getUserId()
   const { data, error } = await supabase
     .from('exercises')
-    .insert({ name, muscle_group: muscleGroup, equipment })
+    .insert({ name, muscle_group: muscleGroup, equipment, user_id: userId })
     .select('id, name, muscle_group, equipment')
     .single()
 
