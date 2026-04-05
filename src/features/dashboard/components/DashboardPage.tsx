@@ -8,6 +8,7 @@ import {
   Target,
   Scale,
   Ruler,
+  Calendar,
 } from 'lucide-react'
 import { useDashboard } from '../hooks/useDashboard'
 import { cn } from '@/lib/utils'
@@ -42,11 +43,12 @@ function DeltaBadge({ delta, unit, invert }: { delta: number | null; unit: strin
 }
 
 export function DashboardPage() {
-  const { workouts, metrics } = useDashboard()
+  const { workouts, metrics, counts } = useDashboard()
 
   const isLoading = workouts.isLoading || metrics.isLoading
   const w = workouts.data
   const m = metrics.data
+  const c = counts.data
 
   if (isLoading) {
     return (
@@ -62,6 +64,19 @@ export function DashboardPage() {
         <h1 className="text-xl font-bold">Tableau de bord</h1>
         <p className="text-sm text-muted-foreground">Résumé des 30 derniers jours</p>
       </div>
+
+      {/* Workout counts by period */}
+      <section className="space-y-3">
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <Calendar className="size-4 text-primary" />
+          Séances réalisées
+        </h2>
+        <div className="grid grid-cols-3 gap-3">
+          <CountCard label="7 jours" value={c?.week ?? 0} />
+          <CountCard label="1 mois" value={c?.month ?? 0} />
+          <CountCard label="1 an" value={c?.year ?? 0} />
+        </div>
+      </section>
 
       {/* Workout stats */}
       <section className="space-y-3">
@@ -178,6 +193,15 @@ export function DashboardPage() {
           </p>
         )}
       </section>
+    </div>
+  )
+}
+
+function CountCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-3 text-center">
+      <p className="text-2xl font-bold tabular-nums">{value}</p>
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
     </div>
   )
 }

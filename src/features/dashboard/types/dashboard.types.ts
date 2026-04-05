@@ -1,3 +1,9 @@
+export type WorkoutCounts = {
+  week: number
+  month: number
+  year: number
+}
+
 export type WorkoutSummary = {
   totalWorkouts: number
   totalSets: number

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchWorkoutSummary, fetchBodyMetricsSummary } from '../api/dashboard.api'
+import { fetchWorkoutSummary, fetchBodyMetricsSummary, fetchWorkoutCounts } from '../api/dashboard.api'
 
 function getDateNDaysAgo(days: number): string {
   const d = new Date()
@@ -20,5 +20,10 @@ export function useDashboard() {
     queryFn: () => fetchBodyMetricsSummary(since),
   })
 
-  return { workouts, metrics }
+  const counts = useQuery({
+    queryKey: ['dashboard-counts'],
+    queryFn: fetchWorkoutCounts,
+  })
+
+  return { workouts, metrics, counts }
 }

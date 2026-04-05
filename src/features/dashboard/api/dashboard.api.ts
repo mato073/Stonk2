@@ -1,5 +1,39 @@
 import { supabase } from '../hooks/useSupabase'
-import type { WorkoutSummary, BodyMetricsSummary } from '../types/dashboard.types'
+import type { WorkoutSummary, BodyMetricsSummary, WorkoutCounts } from '../types/dashboard.types'
+
+export async function fetchWorkoutCounts(): Promise<WorkoutCounts> {
+  const userId = await getUserId()
+  const now = new Date()
+  const yearAgo = new Date(now)
+  yearAgo.setFullYear(yearAgo.getFullYear() - 1)
+
+  const { data, error } = await supabase
+    .from('workouts')
+    .select('started_at')
+    .eq('user_id', userId)
+    .not('finished_at', 'is', null)
+    .gte('started_at', yearAgo.toISOString())
+
+  if (error) throw error
+
+  const rows = (data ?? []) as { started_at: string }[]
+  const weekAgo = new Date(now)
+  weekAgo.setDate(weekAgo.getDate() - 7)
+  const monthAgo = new Date(now)
+  monthAgo.setMonth(monthAgo.getMonth() - 1)
+
+  let week = 0
+  let month = 0
+  const year = rows.length
+
+  for (const r of rows) {
+    const t = new Date(r.started_at)
+    if (t >= weekAgo) week++
+    if (t >= monthAgo) month++
+  }
+
+  return { week, month, year }
+}
 
 async function getUserId(): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser()
