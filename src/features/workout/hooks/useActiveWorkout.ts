@@ -212,7 +212,7 @@ export function useActiveWorkout() {
   )
   const cancelWorkout = useCallback(() => dispatch({ type: 'RESET' }), [])
 
-  const finishWorkout = useCallback(async () => {
+  const finishWorkout = useCallback(async (syncTemplate: boolean = false) => {
     if (!state) return
     setSaving(true)
     setError(null)
@@ -245,38 +245,38 @@ export function useActiveWorkout() {
         sets,
       )
 
-      // Sync weights/reps back to template sets
-      const templateUpdates: { id: string; weight_kg: number | null; reps: number | null; set_type: SetType }[] = []
-      const templateNewSets: TemplateSetInsert[] = []
+      // Sync weights/reps back to template sets — only if user confirmed
+      if (syncTemplate) {
+        const templateUpdates: { id: string; weight_kg: number | null; reps: number | null; set_type: SetType }[] = []
+        const templateNewSets: TemplateSetInsert[] = []
 
-      for (const ex of state.exercises) {
-        for (const s of ex.sets) {
-          if (s.templateSetId) {
-            // Existing template set — update it
-            templateUpdates.push({
-              id: s.templateSetId,
-              weight_kg: s.weight_kg,
-              reps: s.reps,
-              set_type: s.set_type,
-            })
-          } else if (ex.templateExerciseId) {
-            // New set added during workout — create in template
-            templateNewSets.push({
-              template_exercise_id: ex.templateExerciseId,
-              position: s.set_number - 1,
-              set_type: s.set_type,
-              weight_kg: s.weight_kg,
-              reps: s.reps,
-            })
+        for (const ex of state.exercises) {
+          for (const s of ex.sets) {
+            if (s.templateSetId) {
+              templateUpdates.push({
+                id: s.templateSetId,
+                weight_kg: s.weight_kg,
+                reps: s.reps,
+                set_type: s.set_type,
+              })
+            } else if (ex.templateExerciseId) {
+              templateNewSets.push({
+                template_exercise_id: ex.templateExerciseId,
+                position: s.set_number - 1,
+                set_type: s.set_type,
+                weight_kg: s.weight_kg,
+                reps: s.reps,
+              })
+            }
           }
         }
-      }
 
-      if (templateUpdates.length > 0 || templateNewSets.length > 0) {
-        try {
-          await syncTemplateSetsFromWorkout(templateUpdates, templateNewSets)
-        } catch {
-          // Non-blocking: workout is already saved
+        if (templateUpdates.length > 0 || templateNewSets.length > 0) {
+          try {
+            await syncTemplateSetsFromWorkout(templateUpdates, templateNewSets)
+          } catch {
+            // Non-blocking: workout is already saved
+          }
         }
       }
 
@@ -288,10 +288,14 @@ export function useActiveWorkout() {
     }
   }, [state])
 
+  // True if the active workout was started from a template (any exercise has templateExerciseId)
+  const hasTemplate = state?.exercises.some((e) => e.templateExerciseId) ?? false
+
   return {
     state,
     dispatch,
     isActive: state !== null,
+    hasTemplate,
     startWorkout,
     startFromTemplate,
     finishWorkout,

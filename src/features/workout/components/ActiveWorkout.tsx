@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import type { ActiveWorkoutState, Exercise, SetType, RestConfig } from '../types/workout.types'
 import type { Action } from '../hooks/useActiveWorkout'
 import { REST_DEFAULTS } from '../types/workout.types'
@@ -14,16 +20,26 @@ import { AddExerciseDialog } from './AddExerciseDialog'
 type Props = {
   state: ActiveWorkoutState
   dispatch: React.Dispatch<Action>
-  onFinish: () => void
+  onFinish: (syncTemplate: boolean) => void
   onCancel: () => void
   saving: boolean
+  hasTemplate: boolean
 }
 
-export function ActiveWorkout({ state, dispatch, onFinish, onCancel, saving }: Props) {
+export function ActiveWorkout({ state, dispatch, onFinish, onCancel, saving, hasTemplate }: Props) {
   const { formatted: elapsed } = useWorkoutTimer(state.startedAt)
   const restTimer = useRestTimer()
   const [addExOpen, setAddExOpen] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [finishOpen, setFinishOpen] = useState(false)
+
+  function handleFinishClick() {
+    if (hasTemplate) {
+      setFinishOpen(true)
+    } else {
+      onFinish(false)
+    }
+  }
 
   async function handleAddExercise(exercise: Exercise) {
     // Fetch previous session's sets for this exercise
@@ -58,7 +74,7 @@ export function ActiveWorkout({ state, dispatch, onFinish, onCancel, saving }: P
         </div>
         <Button
           size="sm"
-          onClick={onFinish}
+          onClick={handleFinishClick}
           disabled={saving}
         >
           {saving ? 'Sauvegarde...' : 'Terminer'}
@@ -146,6 +162,48 @@ export function ActiveWorkout({ state, dispatch, onFinish, onCancel, saving }: P
         onSkip={restTimer.stop}
         onAdjust={restTimer.adjust}
       />
+
+      {/* Finish confirmation dialog */}
+      <Dialog open={finishOpen} onOpenChange={setFinishOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Terminer la séance</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Mettre à jour le programme avec les charges et répétitions de cette séance ?
+            </p>
+            <div className="grid gap-2">
+              <Button
+                onClick={() => {
+                  setFinishOpen(false)
+                  onFinish(true)
+                }}
+                disabled={saving}
+              >
+                Oui, mettre à jour le programme
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setFinishOpen(false)
+                  onFinish(false)
+                }}
+                disabled={saving}
+              >
+                Non, garder le programme inchangé
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setFinishOpen(false)}
+                disabled={saving}
+              >
+                Annuler
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

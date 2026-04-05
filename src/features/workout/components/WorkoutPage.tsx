@@ -18,7 +18,7 @@ import type { WorkoutTemplate } from '../types/workout.types'
 
 export function WorkoutPage() {
   const {
-    state, dispatch, isActive,
+    state, dispatch, isActive, hasTemplate,
     startWorkout, startFromTemplate,
     finishWorkout, cancelWorkout,
     saving, error,
@@ -39,6 +39,7 @@ export function WorkoutPage() {
           onFinish={finishWorkout}
           onCancel={cancelWorkout}
           saving={saving}
+          hasTemplate={hasTemplate}
         />
         {error && (
           <div className="fixed bottom-24 left-4 right-4 z-50 mx-auto max-w-lg rounded-lg bg-destructive/10 border border-destructive/30 px-4 py-2 text-center text-sm text-destructive">
