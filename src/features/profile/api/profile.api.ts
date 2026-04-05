@@ -1,6 +1,11 @@
 import { supabase } from '../hooks/useSupabase'
 import type { Profile, Gender } from '../types/profile.types'
 
+export async function signOut(): Promise<void> {
+  const { error } = await supabase.auth.signOut()
+  if (error) throw error
+}
+
 async function getUserId(): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Non authentifié')

@@ -8,11 +8,13 @@ import {
   Dumbbell,
   Ruler,
   Save,
+  LogOut,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useProfile, useRecentMetrics } from '../hooks/useProfile'
+import { signOut } from '../api/profile.api'
 import type { MetricRow } from '../api/profile.api'
 import type { Gender, TrendResult, MuscleGainIndicator, BodyFatResult } from '../types/profile.types'
 import { cn } from '@/lib/utils'
@@ -180,6 +182,11 @@ export function ProfilePage() {
     })
   }
 
+  async function handleLogout() {
+    await signOut()
+    window.location.href = '/login'
+  }
+
   if (profile.isLoading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
@@ -321,6 +328,11 @@ export function ProfilePage() {
           Ajoute au moins 2 entrées dans Stats pour voir les tendances
         </p>
       )}
+
+      <Button variant="outline" className="w-full" onClick={handleLogout}>
+        <LogOut className="size-4" />
+        Se déconnecter
+      </Button>
     </div>
   )
 }
