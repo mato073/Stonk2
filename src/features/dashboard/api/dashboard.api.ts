@@ -1,38 +1,45 @@
 import { supabase } from '../hooks/useSupabase'
-import type { WorkoutSummary, BodyMetricsSummary, WorkoutCounts } from '../types/dashboard.types'
+import type { WorkoutSummary, BodyMetricsSummary, WeeklyWorkoutData } from '../types/dashboard.types'
 
-export async function fetchWorkoutCounts(): Promise<WorkoutCounts> {
+const WEEKS_COUNT = 8
+
+export async function fetchWeeklyWorkouts(): Promise<WeeklyWorkoutData[]> {
   const userId = await getUserId()
   const now = new Date()
-  const yearAgo = new Date(now)
-  yearAgo.setFullYear(yearAgo.getFullYear() - 1)
+  // Start from the Monday of (WEEKS_COUNT) weeks ago
+  const start = new Date(now)
+  start.setDate(start.getDate() - start.getDay() + 1 - (WEEKS_COUNT - 1) * 7)
+  start.setHours(0, 0, 0, 0)
 
   const { data, error } = await supabase
     .from('workouts')
     .select('started_at')
     .eq('user_id', userId)
     .not('finished_at', 'is', null)
-    .gte('started_at', yearAgo.toISOString())
+    .gte('started_at', start.toISOString())
 
   if (error) throw error
 
-  const rows = (data ?? []) as { started_at: string }[]
-  const weekAgo = new Date(now)
-  weekAgo.setDate(weekAgo.getDate() - 7)
-  const monthAgo = new Date(now)
-  monthAgo.setMonth(monthAgo.getMonth() - 1)
-
-  let week = 0
-  let month = 0
-  const year = rows.length
-
-  for (const r of rows) {
-    const t = new Date(r.started_at)
-    if (t >= weekAgo) week++
-    if (t >= monthAgo) month++
+  // Build week buckets
+  const weeks: WeeklyWorkoutData[] = []
+  for (let i = 0; i < WEEKS_COUNT; i++) {
+    const weekStart = new Date(start)
+    weekStart.setDate(weekStart.getDate() + i * 7)
+    weeks.push({
+      label: `${weekStart.getDate()}/${weekStart.getMonth() + 1}`,
+      count: 0,
+    })
   }
 
-  return { week, month, year }
+  for (const r of (data ?? []) as { started_at: string }[]) {
+    const t = new Date(r.started_at)
+    const diff = Math.floor((t.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000))
+    if (diff >= 0 && diff < WEEKS_COUNT) {
+      weeks[diff].count++
+    }
+  }
+
+  return weeks
 }
 
 async function getUserId(): Promise<string> {

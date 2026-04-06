@@ -1,7 +1,6 @@
-export type WorkoutCounts = {
-  week: number
-  month: number
-  year: number
+export type WeeklyWorkoutData = {
+  label: string
+  count: number
 }
 
 export type WorkoutSummary = {

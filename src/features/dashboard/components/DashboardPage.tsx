@@ -8,8 +8,8 @@ import {
   Target,
   Scale,
   Ruler,
-  Calendar,
 } from 'lucide-react'
+import { BarChart, Bar, XAxis, ResponsiveContainer, Cell } from 'recharts'
 import { useDashboard } from '../hooks/useDashboard'
 import { cn } from '@/lib/utils'
 
@@ -43,12 +43,12 @@ function DeltaBadge({ delta, unit, invert }: { delta: number | null; unit: strin
 }
 
 export function DashboardPage() {
-  const { workouts, metrics, counts } = useDashboard()
+  const { workouts, metrics, weekly } = useDashboard()
 
   const isLoading = workouts.isLoading || metrics.isLoading
   const w = workouts.data
   const m = metrics.data
-  const c = counts.data
+  const weeklyData = weekly.data ?? []
 
   if (isLoading) {
     return (
@@ -65,17 +65,38 @@ export function DashboardPage() {
         <p className="text-sm text-muted-foreground">Résumé des 30 derniers jours</p>
       </div>
 
-      {/* Workout counts by period */}
-      <section className="space-y-3">
-        <h2 className="flex items-center gap-2 text-base font-semibold">
-          <Calendar className="size-4 text-primary" />
-          Séances réalisées
-        </h2>
-        <div className="grid grid-cols-3 gap-3">
-          <CountCard label="7 jours" value={c?.week ?? 0} />
-          <CountCard label="1 mois" value={c?.month ?? 0} />
-          <CountCard label="1 an" value={c?.year ?? 0} />
+      {/* Workouts per week chart */}
+      <section className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="flex size-8 items-center justify-center rounded-full bg-primary/15">
+            <Dumbbell className="size-4 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold leading-tight">Séances par semaine</h2>
+          </div>
         </div>
+        {weeklyData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={120}>
+            <BarChart data={weeklyData} barCategoryGap="20%">
+              <XAxis
+                dataKey="label"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+              />
+              <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={32}>
+                {weeklyData.map((_, i) => (
+                  <Cell
+                    key={i}
+                    fill={i === weeklyData.length - 1 ? 'hsl(var(--primary))' : 'hsl(var(--primary) / 0.4)'}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <p className="py-4 text-center text-sm text-muted-foreground">Aucune donnée</p>
+        )}
       </section>
 
       {/* Workout stats */}
@@ -193,15 +214,6 @@ export function DashboardPage() {
           </p>
         )}
       </section>
-    </div>
-  )
-}
-
-function CountCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-3 text-center">
-      <p className="text-2xl font-bold tabular-nums">{value}</p>
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
     </div>
   )
 }
