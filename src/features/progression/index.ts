@@ -1,1 +1,1 @@
-// Progression feature barrel export
+export { ProgressionPage } from './components/ProgressionPage'

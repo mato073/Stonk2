@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom'
-import { Home, Dumbbell, BarChart2, User } from 'lucide-react'
+import { Home, Dumbbell, TrendingUp, BarChart2, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const tabs = [
   { to: '/dashboard', label: 'Accueil', icon: Home },
   { to: '/workout', label: 'Workout', icon: Dumbbell },
+  { to: '/progression', label: 'Progrès', icon: TrendingUp },
   { to: '/stats', label: 'Stats', icon: BarChart2 },
   { to: '/profile', label: 'Profil', icon: User },
 ] as const
