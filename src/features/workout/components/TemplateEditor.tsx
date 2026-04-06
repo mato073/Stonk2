@@ -1,11 +1,12 @@
-import { useState } from 'react'
-import { ArrowLeft, Plus, Trash2, X, Timer } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { ArrowLeft, Plus, Trash2, X, Timer, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useTemplateExercises, useTemplateSets } from '../hooks/useTemplates'
-import type { Exercise, SetType, TemplateExercise, RestConfig } from '../types/workout.types'
+import type { Exercise, SetType, TemplateSet, RestConfig } from '../types/workout.types'
 import { AddExerciseDialog } from './AddExerciseDialog'
 import { cn } from '@/lib/utils'
+import * as api from '../api/workout.api'
+import { useQueryClient } from '@tanstack/react-query'
 
 const SET_TYPE_LABELS: Record<SetType, string> = {
   normal: 'Normal',
@@ -37,6 +38,28 @@ const SET_TEXT_COLORS: Record<SetType, string> = {
 
 const ALL_TYPES: SetType[] = ['normal', 'warmup', 'dropset', 'failure']
 
+// --- Local types for editing ---
+
+type LocalSet = {
+  localId: string
+  dbId: string | null // null = new set
+  set_type: SetType
+  weight_kg: number | null
+  reps: number | null
+}
+
+type LocalExercise = {
+  localId: string
+  dbId: string | null // null = new
+  exercise: Exercise
+  rest_warmup: number
+  rest_normal: number
+  rest_dropset: number
+  rest_failure: number
+  sets: LocalSet[]
+  removed: boolean
+}
+
 type Props = {
   templateId: string
   templateName: string
@@ -45,79 +68,340 @@ type Props = {
 }
 
 export function TemplateEditor({ templateId, templateName, onBack, onRename }: Props) {
-  const { exercises, add, update, remove } = useTemplateExercises(templateId)
+  const qc = useQueryClient()
   const [addExOpen, setAddExOpen] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [name, setName] = useState(templateName)
+  const [exercises, setExercises] = useState<LocalExercise[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [originalJson, setOriginalJson] = useState('')
 
-  const data = exercises.data ?? []
+  // Load data
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      try {
+        const teList = await api.fetchTemplateExercises(templateId)
+        const teIds = teList.map((te) => te.id)
+        const allSets = teIds.length > 0 ? await api.fetchAllTemplateSets(teIds) : []
+
+        const setsMap = new Map<string, TemplateSet[]>()
+        for (const s of allSets) {
+          if (!setsMap.has(s.template_exercise_id)) setsMap.set(s.template_exercise_id, [])
+          setsMap.get(s.template_exercise_id)!.push(s)
+        }
+
+        const local: LocalExercise[] = teList.map((te) => ({
+          localId: crypto.randomUUID(),
+          dbId: te.id,
+          exercise: te.exercise!,
+          rest_warmup: te.rest_warmup,
+          rest_normal: te.rest_normal,
+          rest_dropset: te.rest_dropset,
+          rest_failure: te.rest_failure,
+          removed: false,
+          sets: (setsMap.get(te.id) ?? []).map((s) => ({
+            localId: crypto.randomUUID(),
+            dbId: s.id,
+            set_type: s.set_type,
+            weight_kg: s.weight_kg,
+            reps: s.reps,
+          })),
+        }))
+
+        setExercises(local)
+        setOriginalJson(JSON.stringify(local))
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [templateId])
+
+  // Track dirty state
+  useEffect(() => {
+    if (!loading) {
+      setDirty(JSON.stringify(exercises) !== originalJson || name !== templateName)
+    }
+  }, [exercises, name, originalJson, loading, templateName])
 
   function handleAddExercise(exercise: Exercise) {
-    add.mutate({
-      template_id: templateId,
-      exercise_id: exercise.id,
-      position: data.length,
-      sets_count: 0,
-      set_type: 'normal',
-    })
+    setExercises((prev) => [
+      ...prev,
+      {
+        localId: crypto.randomUUID(),
+        dbId: null,
+        exercise,
+        rest_warmup: 60,
+        rest_normal: 90,
+        rest_dropset: 30,
+        rest_failure: 120,
+        removed: false,
+        sets: [{ localId: crypto.randomUUID(), dbId: null, set_type: 'normal', weight_kg: null, reps: null }],
+      },
+    ])
   }
+
+  function handleRemoveExercise(localId: string) {
+    setExercises((prev) =>
+      prev.map((e) => (e.localId === localId ? { ...e, removed: true } : e)),
+    )
+  }
+
+  function handleUpdateRest(localId: string, rest: Partial<RestConfig>) {
+    setExercises((prev) =>
+      prev.map((e) => (e.localId === localId ? { ...e, ...rest } : e)),
+    )
+  }
+
+  function handleAddSet(exLocalId: string) {
+    setExercises((prev) =>
+      prev.map((e) => {
+        if (e.localId !== exLocalId) return e
+        const last = e.sets[e.sets.length - 1]
+        return {
+          ...e,
+          sets: [
+            ...e.sets,
+            {
+              localId: crypto.randomUUID(),
+              dbId: null,
+              set_type: last?.set_type ?? 'normal',
+              weight_kg: last?.weight_kg ?? null,
+              reps: last?.reps ?? null,
+            },
+          ],
+        }
+      }),
+    )
+  }
+
+  function handleRemoveSet(exLocalId: string, setLocalId: string) {
+    setExercises((prev) =>
+      prev.map((e) => {
+        if (e.localId !== exLocalId) return e
+        return { ...e, sets: e.sets.filter((s) => s.localId !== setLocalId) }
+      }),
+    )
+  }
+
+  function handleUpdateSet(
+    exLocalId: string,
+    setLocalId: string,
+    field: 'set_type' | 'weight_kg' | 'reps',
+    value: SetType | number | null,
+  ) {
+    setExercises((prev) =>
+      prev.map((e) => {
+        if (e.localId !== exLocalId) return e
+        return {
+          ...e,
+          sets: e.sets.map((s) =>
+            s.localId === setLocalId ? { ...s, [field]: value } : s,
+          ),
+        }
+      }),
+    )
+  }
+
+  const handleSave = useCallback(async () => {
+    setSaving(true)
+    try {
+      // Rename if changed
+      if (name.trim() && name.trim() !== templateName) {
+        await api.updateTemplateName(templateId, name.trim())
+        onRename(name.trim())
+      }
+
+      // Parse original to diff
+      const original: LocalExercise[] = originalJson ? JSON.parse(originalJson) : []
+      const originalExIds = new Set(original.filter((e) => e.dbId).map((e) => e.dbId!))
+      // 1. Delete removed exercises
+      for (const ex of exercises) {
+        if (ex.removed && ex.dbId) {
+          // Delete sets first
+          for (const s of ex.sets) {
+            if (s.dbId) await api.removeTemplateSet(s.dbId)
+          }
+          await api.removeTemplateExercise(ex.dbId)
+        }
+      }
+
+      // Also delete exercises that were in original but no longer in list
+      const currentExDbIds = new Set(exercises.filter((e) => !e.removed && e.dbId).map((e) => e.dbId!))
+      for (const id of originalExIds) {
+        if (!currentExDbIds.has(id)) {
+          await api.removeTemplateExercise(id)
+        }
+      }
+
+      const activeExercises = exercises.filter((e) => !e.removed)
+
+      for (let i = 0; i < activeExercises.length; i++) {
+        const ex = activeExercises[i]
+
+        if (ex.dbId) {
+          // Update existing exercise
+          await api.updateTemplateExercise(ex.dbId, {
+            position: i,
+            rest_warmup: ex.rest_warmup,
+            rest_normal: ex.rest_normal,
+            rest_dropset: ex.rest_dropset,
+            rest_failure: ex.rest_failure,
+          })
+
+          // Handle sets
+          const currentSetDbIds = new Set(ex.sets.filter((s) => s.dbId).map((s) => s.dbId!))
+          const origEx = original.find((o) => o.dbId === ex.dbId)
+          const origSetIds2 = new Set(
+            (origEx?.sets ?? []).filter((s) => s.dbId).map((s) => s.dbId!),
+          )
+
+          // Delete removed sets
+          for (const sid of origSetIds2) {
+            if (!currentSetDbIds.has(sid)) {
+              await api.removeTemplateSet(sid)
+            }
+          }
+
+          // Update or create sets
+          for (let j = 0; j < ex.sets.length; j++) {
+            const s = ex.sets[j]
+            if (s.dbId) {
+              await api.updateTemplateSet(s.dbId, {
+                set_type: s.set_type,
+                weight_kg: s.weight_kg,
+                reps: s.reps,
+              })
+            } else {
+              await api.addTemplateSet({
+                template_exercise_id: ex.dbId,
+                position: j,
+                set_type: s.set_type,
+                weight_kg: s.weight_kg,
+                reps: s.reps,
+              })
+            }
+          }
+        } else {
+          // Create new exercise
+          const created = await api.addTemplateExercise({
+            template_id: templateId,
+            exercise_id: ex.exercise.id,
+            position: i,
+            sets_count: ex.sets.length,
+            set_type: 'normal',
+            rest_warmup: ex.rest_warmup,
+            rest_normal: ex.rest_normal,
+            rest_dropset: ex.rest_dropset,
+            rest_failure: ex.rest_failure,
+          })
+
+          // Create sets
+          for (let j = 0; j < ex.sets.length; j++) {
+            const s = ex.sets[j]
+            await api.addTemplateSet({
+              template_exercise_id: created.id,
+              position: j,
+              set_type: s.set_type,
+              weight_kg: s.weight_kg,
+              reps: s.reps,
+            })
+          }
+        }
+      }
+
+      // Invalidate queries
+      qc.invalidateQueries({ queryKey: ['template-exercises'] })
+      qc.invalidateQueries({ queryKey: ['template-sets'] })
+      qc.invalidateQueries({ queryKey: ['workout-templates'] })
+
+      // Update original snapshot
+      const active = exercises.filter((e) => !e.removed)
+      setOriginalJson(JSON.stringify(active))
+      setExercises(active)
+      setDirty(false)
+    } catch (err) {
+      console.error('Save error:', err)
+    } finally {
+      setSaving(false)
+    }
+  }, [exercises, name, templateName, templateId, originalJson, onRename, qc])
 
   function handleNameBlur() {
     setEditingName(false)
-    if (name.trim() && name.trim() !== templateName) {
-      onRename(name.trim())
-    }
   }
 
+  const activeExercises = exercises.filter((e) => !e.removed)
+
   return (
-    <div className="mx-auto max-w-lg">
+    <div className="mx-auto max-w-lg pb-24">
       {/* Header */}
-      <div className="flex items-center gap-3 p-4">
-        <button onClick={onBack} className="text-muted-foreground">
-          <ArrowLeft className="size-5" />
-        </button>
-        {editingName ? (
-          <Input
-            autoFocus
-            className="h-8 text-lg font-bold"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={handleNameBlur}
-            onKeyDown={(e) => e.key === 'Enter' && handleNameBlur()}
-          />
-        ) : (
-          <button
-            onClick={() => setEditingName(true)}
-            className="text-xl font-bold"
-          >
-            {templateName}
+      <div className="sticky top-0 z-30 border-b border-border bg-background">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <button onClick={onBack} className="text-muted-foreground">
+            <ArrowLeft className="size-5" />
           </button>
-        )}
+          <div className="flex-1 min-w-0">
+            {editingName ? (
+              <Input
+                autoFocus
+                className="h-8 text-lg font-bold"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={handleNameBlur}
+                onKeyDown={(e) => e.key === 'Enter' && handleNameBlur()}
+              />
+            ) : (
+              <button
+                onClick={() => setEditingName(true)}
+                className="text-xl font-bold truncate block"
+              >
+                {name}
+              </button>
+            )}
+          </div>
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={!dirty || saving}
+          >
+            <Save className="size-4" />
+            {saving ? 'Sauvegarde...' : 'Sauvegarder'}
+          </Button>
+        </div>
       </div>
 
-      {/* Exercise list */}
-      <div className="space-y-4 px-4">
-        {exercises.isLoading && (
-          <p className="py-8 text-center text-sm text-muted-foreground">Chargement...</p>
-        )}
+      {loading && (
+        <p className="py-8 text-center text-sm text-muted-foreground">Chargement...</p>
+      )}
 
-        {data.length === 0 && !exercises.isLoading && (
+      {/* Exercise list */}
+      <div className="space-y-4 p-4">
+        {activeExercises.length === 0 && !loading && (
           <p className="py-8 text-center text-sm text-muted-foreground">
             Aucun exercice — ajoutes-en un
           </p>
         )}
 
-        {data.map((te) => (
-          <TemplateExerciseCard
-            key={te.id}
-            te={te}
-            onUpdateRest={(rest) => update.mutate({ id: te.id, ...rest })}
-            onRemove={() => remove.mutate(te.id)}
-            removing={remove.isPending}
+        {activeExercises.map((ex) => (
+          <LocalExerciseCard
+            key={ex.localId}
+            ex={ex}
+            onUpdateRest={(rest) => handleUpdateRest(ex.localId, rest)}
+            onRemove={() => handleRemoveExercise(ex.localId)}
+            onAddSet={() => handleAddSet(ex.localId)}
+            onRemoveSet={(setLocalId) => handleRemoveSet(ex.localId, setLocalId)}
+            onUpdateSet={(setLocalId, field, value) =>
+              handleUpdateSet(ex.localId, setLocalId, field, value)
+            }
           />
         ))}
 
-        {/* Add exercise button */}
         <Button
           variant="outline"
           className="w-full"
@@ -137,7 +421,7 @@ export function TemplateEditor({ templateId, templateName, onBack, onRename }: P
   )
 }
 
-// --- Exercise card with real set rows ---
+// --- Exercise card ---
 
 const REST_FIELDS: { key: keyof RestConfig; label: string; color: string }[] = [
   { key: 'rest_warmup', label: 'Échauffement', color: 'text-orange-400' },
@@ -146,38 +430,29 @@ const REST_FIELDS: { key: keyof RestConfig; label: string; color: string }[] = [
   { key: 'rest_failure', label: 'Failure', color: 'text-red-400' },
 ]
 
-function TemplateExerciseCard({
-  te,
+function LocalExerciseCard({
+  ex,
   onUpdateRest,
   onRemove,
-  removing,
+  onAddSet,
+  onRemoveSet,
+  onUpdateSet,
 }: {
-  te: TemplateExercise
+  ex: LocalExercise
   onUpdateRest: (rest: Partial<RestConfig>) => void
   onRemove: () => void
-  removing: boolean
+  onAddSet: () => void
+  onRemoveSet: (setLocalId: string) => void
+  onUpdateSet: (setLocalId: string, field: 'set_type' | 'weight_kg' | 'reps', value: SetType | number | null) => void
 }) {
-  const { sets, add, update, remove } = useTemplateSets(te.id)
   const [showRest, setShowRest] = useState(false)
-  const setList = sets.data ?? []
-
-  function handleAddSet() {
-    const lastSet = setList[setList.length - 1]
-    add.mutate({
-      template_exercise_id: te.id,
-      position: setList.length,
-      set_type: lastSet?.set_type ?? 'normal',
-      weight_kg: lastSet?.weight_kg ?? null,
-      reps: lastSet?.reps ?? null,
-    })
-  }
 
   return (
     <div className="rounded-xl border border-border bg-card">
       {/* Header */}
       <div className="flex items-center justify-between px-3 pt-3">
         <h3 className="text-base font-bold text-primary">
-          {te.exercise?.name ?? 'Exercice inconnu'}
+          {ex.exercise?.name ?? 'Exercice inconnu'}
         </h3>
         <div className="flex items-center gap-1">
           <Button
@@ -188,14 +463,14 @@ function TemplateExerciseCard({
           >
             <Timer className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon-sm" onClick={onRemove} disabled={removing}>
+          <Button variant="ghost" size="icon-sm" onClick={onRemove}>
             <Trash2 className="size-4 text-muted-foreground" />
           </Button>
         </div>
       </div>
 
-      {te.exercise?.equipment && (
-        <p className="px-3 text-xs text-muted-foreground">{te.exercise.equipment}</p>
+      {ex.exercise?.equipment && (
+        <p className="px-3 text-xs text-muted-foreground">{ex.exercise.equipment}</p>
       )}
 
       {/* Rest timer config */}
@@ -213,7 +488,7 @@ function TemplateExerciseCard({
                   min="0"
                   step="5"
                   className="h-7 w-16 px-1 text-center text-xs"
-                  value={te[key]}
+                  value={ex[key]}
                   onChange={(e) => {
                     const v = parseInt(e.target.value, 10)
                     if (!isNaN(v) && v >= 0) onUpdateRest({ [key]: v })
@@ -237,111 +512,83 @@ function TemplateExerciseCard({
 
       {/* Set rows */}
       <div className="pb-1 px-1">
-        {sets.isLoading && (
-          <p className="py-4 text-center text-xs text-muted-foreground">Chargement...</p>
-        )}
-
-        {setList.map((s, i) => (
-          <TemplateSetRow
-            key={s.id}
-            set={s}
-            index={i}
-            onUpdate={(field, value) => update.mutate({ id: s.id, [field]: value })}
-            onRemove={() => remove.mutate(s.id)}
-          />
-        ))}
-
-        {!sets.isLoading && setList.length === 0 && (
+        {ex.sets.length === 0 && (
           <p className="py-3 text-center text-xs text-muted-foreground">Aucune série</p>
         )}
+
+        {ex.sets.map((s, i) => {
+          const label = s.set_type === 'normal' || s.set_type === 'failure'
+            ? String(i + 1)
+            : SET_SHORT_LABELS[s.set_type]
+
+          return (
+            <div
+              key={s.localId}
+              className={cn(
+                'grid grid-cols-[2.5rem_1fr_4rem_4rem_1.5rem] items-center gap-1 px-2 py-1.5 rounded-lg',
+                SET_BG_COLORS[s.set_type],
+              )}
+            >
+              <span className={cn('text-center text-sm font-bold', SET_TEXT_COLORS[s.set_type])}>
+                {label}
+              </span>
+
+              <select
+                value={s.set_type}
+                onChange={(e) => onUpdateSet(s.localId, 'set_type', e.target.value as SetType)}
+                className={cn(
+                  'rounded-md px-2 py-1 text-xs font-medium border-0 cursor-pointer bg-transparent',
+                  SET_TEXT_COLORS[s.set_type],
+                )}
+              >
+                {ALL_TYPES.map((t) => (
+                  <option key={t} value={t}>{SET_TYPE_LABELS[t]}</option>
+                ))}
+              </select>
+
+              <Input
+                type="number"
+                step="0.5"
+                min="0"
+                placeholder="kg"
+                className="h-8 px-1 text-center text-sm"
+                value={s.weight_kg ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value
+                  onUpdateSet(s.localId, 'weight_kg', v === '' ? null : parseFloat(v))
+                }}
+              />
+
+              <Input
+                type="number"
+                min="0"
+                placeholder="reps"
+                className="h-8 px-1 text-center text-sm"
+                value={s.reps ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value
+                  onUpdateSet(s.localId, 'reps', v === '' ? null : parseInt(v, 10))
+                }}
+              />
+
+              <button
+                onClick={() => onRemoveSet(s.localId)}
+                className="text-muted-foreground/50 hover:text-destructive"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )
+        })}
       </div>
 
       {/* Add set */}
       <button
-        onClick={handleAddSet}
+        onClick={onAddSet}
         className="flex w-full items-center justify-center gap-1 border-t border-border py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
       >
         <Plus className="size-4" />
         Ajouter une série
-      </button>
-    </div>
-  )
-}
-
-// --- Individual set row ---
-
-function TemplateSetRow({
-  set,
-  index,
-  onUpdate,
-  onRemove,
-}: {
-  set: { id: string; set_type: SetType; weight_kg: number | null; reps: number | null }
-  index: number
-  onUpdate: (field: 'set_type' | 'weight_kg' | 'reps', value: SetType | number | null) => void
-  onRemove: () => void
-}) {
-  const label = set.set_type === 'normal' || set.set_type === 'failure'
-    ? String(index + 1)
-    : SET_SHORT_LABELS[set.set_type]
-
-  return (
-    <div className={cn(
-      'grid grid-cols-[2.5rem_1fr_4rem_4rem_1.5rem] items-center gap-1 px-2 py-1.5 rounded-lg',
-      SET_BG_COLORS[set.set_type],
-    )}>
-      {/* Set label */}
-      <span className={cn('text-center text-sm font-bold', SET_TEXT_COLORS[set.set_type])}>
-        {label}
-      </span>
-
-      {/* Type dropdown */}
-      <select
-        value={set.set_type}
-        onChange={(e) => onUpdate('set_type', e.target.value as SetType)}
-        className={cn(
-          'rounded-md px-2 py-1 text-xs font-medium border-0 cursor-pointer bg-transparent',
-          SET_TEXT_COLORS[set.set_type],
-        )}
-      >
-        {ALL_TYPES.map((t) => (
-          <option key={t} value={t}>{SET_TYPE_LABELS[t]}</option>
-        ))}
-      </select>
-
-      {/* Weight */}
-      <Input
-        type="number"
-        step="0.5"
-        min="0"
-        placeholder="kg"
-        className="h-8 px-1 text-center text-sm"
-        value={set.weight_kg ?? ''}
-        onChange={(e) => {
-          const v = e.target.value
-          onUpdate('weight_kg', v === '' ? null : parseFloat(v))
-        }}
-      />
-
-      {/* Reps */}
-      <Input
-        type="number"
-        min="0"
-        placeholder="reps"
-        className="h-8 px-1 text-center text-sm"
-        value={set.reps ?? ''}
-        onChange={(e) => {
-          const v = e.target.value
-          onUpdate('reps', v === '' ? null : parseInt(v, 10))
-        }}
-      />
-
-      {/* Remove */}
-      <button
-        onClick={onRemove}
-        className="text-muted-foreground/50 hover:text-destructive"
-      >
-        <X className="size-3.5" />
       </button>
     </div>
   )
