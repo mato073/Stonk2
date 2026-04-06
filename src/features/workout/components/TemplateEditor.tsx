@@ -341,7 +341,7 @@ export function TemplateEditor({ templateId, templateName, onBack, onRename }: P
   return (
     <div className="mx-auto max-w-lg pb-24">
       {/* Header */}
-      <div className="sticky top-0 z-30 border-b border-border bg-background">
+      <div className="sticky top-0 z-30 border-b border-border bg-background pt-[env(safe-area-inset-top)]">
         <div className="flex items-center gap-3 px-4 py-3">
           <button onClick={onBack} className="text-muted-foreground">
             <ArrowLeft className="size-5" />

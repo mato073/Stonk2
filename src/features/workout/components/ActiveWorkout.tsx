@@ -68,7 +68,7 @@ export function ActiveWorkout({ state, dispatch, onFinish, onCancel, saving, has
   return (
     <div className="mx-auto max-w-lg pb-32">
       {/* Top bar */}
-      <div className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background px-4 py-3">
+      <div className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-3">
           <span className="text-lg font-bold tabular-nums">{elapsed}</span>
         </div>
