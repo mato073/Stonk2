@@ -82,13 +82,13 @@ export function DashboardPage() {
                 dataKey="label"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                tick={{ fontSize: 10, fill: '#a1a1aa' }}
               />
               <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={32}>
                 {weeklyData.map((_, i) => (
                   <Cell
                     key={i}
-                    fill={i === weeklyData.length - 1 ? 'hsl(var(--primary))' : 'hsl(var(--primary) / 0.4)'}
+                    fill={i === weeklyData.length - 1 ? '#863bff' : '#863bff66'}
                   />
                 ))}
               </Bar>

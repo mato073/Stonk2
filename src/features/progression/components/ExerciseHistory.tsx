@@ -247,18 +247,18 @@ function ChartCard({ title, data, dataKey, color, unit }: {
             dataKey="date"
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+            tick={{ fontSize: 10, fill: '#a1a1aa' }}
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+            tick={{ fontSize: 10, fill: '#a1a1aa' }}
             width={40}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: 'hsl(var(--card))',
-              border: '1px solid hsl(var(--border))',
+              backgroundColor: '#2a2a2a',
+              border: '1px solid rgba(255,255,255,0.1)',
               borderRadius: '8px',
               fontSize: '12px',
             }}
@@ -295,7 +295,7 @@ function ChartsTab({ history }: { history: WorkoutEntry[] }) {
         title="1RM estimé"
         data={data}
         dataKey="best1RM"
-        color="hsl(var(--primary))"
+        color="#863bff"
         unit="kg"
       />
       <ChartCard
